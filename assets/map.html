@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brainstorm idea map</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f3ee;color:#21332e;font:16px/1.5 system-ui,sans-serif}header{padding:32px 4vw 20px;border-bottom:1px solid #d4dcd6}small,.muted{color:#5c7068}h1{font-size:clamp(24px,4vw,40px);margin:4px 0}header p{max-width:850px}a{color:#116650}button,input,select{font:inherit}input,select{padding:9px;border:1px solid #a6b9ad;border-radius:7px;background:white}nav{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:16px 4vw}main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;padding:0 4vw 32px}.viewport{overflow:auto;border:1px solid #d4dcd6;border-radius:12px;background:#eaf0ea;min-height:440px;max-height:75vh}.board{position:relative;min-height:440px}svg{position:absolute;inset:0;pointer-events:none}.node{position:absolute;width:230px;height:145px;text-align:left;border:1px solid #a7b9ad;border-radius:12px;padding:15px;background:#fff;cursor:pointer;color:inherit;box-shadow:0 3px 10px #193a2310}.node:hover,.node:focus-visible{outline:3px solid #5b9b81}.node[aria-pressed="true"]{border:3px solid #17634d;padding:13px}.node strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:4px 0;font-size:17px}.badge{display:inline-block;font-size:12px;border-radius:20px;padding:2px 9px;background:#e3eee7}.selected .badge{background:#c6e8c7}.parked .badge{background:#f5e8b8}.rejected .badge{background:#f5d9d5}.dim{opacity:.25}aside{background:white;border-radius:12px;padding:22px;overflow-wrap:anywhere;max-height:75vh;overflow:auto}aside h2{margin-top:0}.feedback{padding:12px 0;border-top:1px solid #e5e9e5}.feedback p{white-space:pre-wrap}.empty{padding:30px}.legend{font-size:13px;padding:0 4vw 16px}#error{color:#9a3020;padding:0 4vw}@media(max-width:850px){main{grid-template-columns:1fr}aside{max-height:none}.viewport{max-height:60vh}}
+</style>
+<header><small id="map-id">BRAINSTORM</small><h1 id="title">Brainstorm idea map</h1><p id="premise"></p></header>
+<nav aria-label="Map controls"><label>Find an idea <input id="search" type="search" placeholder="ID, title, or description"></label><label>Status <select id="status"><option value="all">All</option><option>exploring</option><option>selected</option><option>parked</option><option>rejected</option></select></label><span id="count" class="muted" aria-live="polite"></span></nav>
+<div class="legend">Read left to right: starting ideas → variations → combinations. Lines show parent relationships. Click an idea for details; filters dim other ideas without hiding their connections.</div>
+<p id="error" role="alert"></p>
+<main><div class="viewport" aria-label="Idea relationships"><div class="board" id="board"><svg id="edges" aria-hidden="true"></svg></div></div><aside id="details" aria-live="polite"><h2>Choose an idea</h2><p>Its description, feedback, and Markdown link appear here.</p></aside></main>
+<!-- Replace this JSON with the current idea records. Escape < as \u003c. -->
+<script id="map-data" type="application/json">
+{"id":"","title":"New brainstorm","premise":"","ideas":[]}
+</script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const text = (tag, value, parent) => { const e = document.createElement(tag); e.textContent = value; parent.append(e); return e; };
+  try {
+    const data = JSON.parse($('map-data').textContent);
+    $('map-id').textContent = data.id || 'BRAINSTORM';
+    $('title').textContent = data.title;
+    document.title = data.title + ' — idea map';
+    $('premise').textContent = data.premise;
+    const ideas = data.ideas, byId = new Map(ideas.map(n => [n.id,n]));
+    if (byId.size !== ideas.length) throw new Error('Duplicate idea IDs in map data.');
+    const depth = new Map(), visiting = new Set();
+    function level(n) {
+      if (depth.has(n.id)) return depth.get(n.id);
+      if (visiting.has(n.id)) throw new Error('Parent relationships contain a cycle.');
+      visiting.add(n.id);
+      const parents = n.parents.map(id => {if (!byId.has(id)) throw new Error('Missing parent: ' + id); return byId.get(id);});
+      const d = parents.length ? 1 + Math.max(...parents.map(level)) : 0;
+      visiting.delete(n.id); depth.set(n.id,d); return d;
+    }
+    ideas.forEach(level);
+    const rows = new Map(), positions = new Map(), buttons = new Map();
+    ideas.forEach(n => {const col = depth.get(n.id), row = rows.get(col) || 0; rows.set(col,row+1); positions.set(n.id,{x:28+col*300,y:35+row*185});});
+    const width = Math.max(600, ...[...positions.values()].map(p=>p.x+270));
+    const height = Math.max(440, ...[...positions.values()].map(p=>p.y+175));
+    $('board').style.width = width+'px'; $('board').style.height=height+'px';
+    $('edges').setAttribute('width',width); $('edges').setAttribute('height',height);
+    function show(n) {
+      buttons.forEach((b,id)=>b.setAttribute('aria-pressed',String(id===n.id)));
+      const panel=$('details'); panel.replaceChildren();
+      text('small',data.id+'/'+n.id,panel); text('h2',n.title,panel);
+      text('span',n.kind+' · '+n.status,panel).className='badge';
+      text('p',n.summary,panel);
+      if (/^ideas\/idea-\d+\.md$/.test(n.file)) {const a=text('a','Open full idea Markdown ↗',panel);a.href=n.file;}
+      text('h3','Parents',panel);
+      text('p',n.parents.length?n.parents.map(id=>id+' — '+byId.get(id).title).join(', '):'Starting point',panel);
+      text('h3','Feedback',panel);
+      if (!n.feedback.length) text('p','No recorded feedback yet.',panel);
+      n.feedback.forEach(f=>{const item=text('div','',panel);item.className='feedback';text('small',f.attribution,item);text('p',f.text,item);});
+    }
+    ideas.forEach(n=>{
+      const p=positions.get(n.id), b=text('button','',$('board'));
+      b.type='button'; b.className='node';
+      if (['exploring','selected','parked','rejected'].includes(n.status)) b.classList.add(n.status);
+      b.style.left=p.x+'px';b.style.top=p.y+'px';b.setAttribute('aria-pressed','false');
+      text('small',n.id+' · '+n.kind,b);text('strong',n.title,b);text('span',n.status,b).className='badge';
+      b.onclick=()=>show(n);buttons.set(n.id,b);
+      n.parents.forEach(id=>{const a=positions.get(id);const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',`M${a.x+230},${a.y+62} C${a.x+265},${a.y+62} ${p.x-35},${p.y+62} ${p.x},${p.y+62}`);path.setAttribute('fill','none');path.setAttribute('stroke','#7f9c8a');path.setAttribute('stroke-width','2');$('edges').append(path);});
+    });
+    function filter() {const q=$('search').value.toLocaleLowerCase(),status=$('status').value;let count=0;ideas.forEach(n=>{const matches=(status==='all'||n.status===status)&&[n.id,n.title,n.summary].join(' ').toLocaleLowerCase().includes(q);buttons.get(n.id).classList.toggle('dim',!matches);if(matches)count++;});$('count').textContent=count+' / '+ideas.length+' ideas';}
+    $('search').oninput=filter;$('status').onchange=filter;filter();
+    if (ideas.length) show(ideas[0]); else text('p','This map has no ideas yet.',$('board')).className='empty';
+  } catch (error) {$('error').textContent='Cannot display this map: '+error.message;}
+})();
+</script>
+</html>
